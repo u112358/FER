@@ -4,9 +4,9 @@ from utils.image_processor import *
 
 
 class FLDModel():
-    def __init_(self):
+    def __init__(self):
         # patch images around prevision landmarks to pass into the Network to extract feature
-        self.input_patches = tf.placeholder(dtype=tf.float32, shape=[68, 64, 64, 3], name='input_patches ')
+        self.input_patches = tf.placeholder(dtype=tf.float32, shape=[68, 64, 64, 3], name='input_patches')
         # ground truth of the landmarks, which are read from .pts files.
         self.input_gt = tf.placeholder(dtype=tf.float32, shape=[68, 2], name='input_gt')
         # current (prevision) landmarks.
@@ -15,12 +15,13 @@ class FLDModel():
         self.init_loc = np.zeros(shape=[68, 2])
 
         self.epoch = 10000
+        self.max_step_per_img = 100
         self.batch_size = 50
-        self.lr = 1e-5
+        self.lr = 1e-4
 
         self.features = self.extract_features(self.input_patches)
         self.delta_loc = self.predict_delta_loc(self.features)
-        self.loss = tf.reduce_mean(tf.squared_difference(self.input_gt - (self.init_loc + self.delta_loc)))
+        self.loss = tf.reduce_mean(tf.squared_difference(self.input_gt, (self.input_loc + self.delta_loc)))
         self.train_op = tf.train.AdamOptimizer(learning_rate=self.lr).minimize(self.loss)
 
     def extract_features(self, input_patches):
@@ -49,26 +50,31 @@ class FLDModel():
 
 def main():
     with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
-        IP = image_processor()
         model = FLDModel()
+        IP = image_processor('./data')
         model.init_loc = IP.get_init_loc()
+        sess.run(tf.global_variables_initializer())
 
         for epoch in range(model.epoch):
-            image, gt = IP.get_next_image_and_gt()
+            # the next line will be used in real code
+            # image, gt = IP.get_next_image_and_gt()
+
+            # the next line is to check  our model
+            image, gt = IP.get_fake_next_image_and_gt()
             loc = model.init_loc
 
-            for i in range(100):  # iterations
+            for i in range(model.max_step_per_img):  # iterations
                 patches = IP.get_patches(image, loc)
                 _, loss, delta_loc = sess.run([model.train_op, model.loss, model.delta_loc],
                                               feed_dict={model.input_patches: patches, model.input_gt: gt,
-                                                         model.init_loc: loc})
+                                                         model.input_loc: loc})
                 loc = loc + delta_loc
-                print('Epoch:%d\t Step:%d out of %d, loss=%lf\n' % epoch, i, 100, loss)
+                #print(loc)
+                print('Epoch:%d\t Step:%d out of %d, loss=%lf\n' % (epoch, i, model.max_step_per_img, loss))
                 if loss < 1e-3:
                     print('loss satisfies the criterion, jump to the next image! \n')
                     break
 
 
-    if __name__ == "__main__":
-        main()
+if __name__ == "__main__":
+    main()
